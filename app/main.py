@@ -1,19 +1,14 @@
-from .core import get_settings
-from .database import init_db
-from .api.v1 import health_router, urls_router
+from .core.config import get_settings
+from .api.v1 import router
 from fastapi import FastAPI
+from pydantic import SecretStr
 
 app = FastAPI(
     title="URL Shortener API",
     description="An API for shortening URLs and managing them.",
     version="1.0.0",
 )
-
-init_db()
-
-app.include_router(health_router, prefix="/api/v1", tags=["health"])
-app.include_router(urls_router, prefix="/api/v1", tags=["urls"])
-
+app.include_router(router, prefix="/api/v1")
 settings = get_settings()
 
 @app.get("/")
@@ -23,7 +18,7 @@ async def read_root():
 @app.get("/settings")
 async def read_settings():
     return {
-        "database_url": settings.database_url,
+        "database_url": SecretStr(settings.database_url),
         "debug": settings.debug,
         "host": settings.host,
         "port": settings.port,

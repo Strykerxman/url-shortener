@@ -1,4 +1,4 @@
-from app.database import Base
+from app.database.database import Base
 from sqlalchemy import Column, Integer, String, Boolean
 
 class URL(Base):
@@ -12,5 +12,5 @@ class URL(Base):
     clicks = Column(Integer, default=0)
 
     def __repr__(self):
-        return f"<URL(key={self.key}, target_url={self.target_url}, is_active={self.is_active}, clicks={self.clicks})>"
+        return f"<URL(id={self.id}, key={self.key}, target_url={self.target_url}, is_active={self.is_active}, clicks={self.clicks})>"
     

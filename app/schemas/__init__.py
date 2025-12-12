@@ -1,3 +1,3 @@
-from .url import URLBase, URL, URLInfo
+from .url import URLBase, URLInfo
 
-__all__ = ["URLBase", "URL", "URLInfo"]
+__all__ = ["URLBase", "URLInfo"]
