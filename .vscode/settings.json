@@ -1,0 +1,6 @@
+{
+  "github.copilot.exclude": [
+    "**/.env*",
+    "**/*.env*"
+  ]
+}

@@ -22,7 +22,5 @@ async def read_settings():
         "database_url": SecretStr(settings.database_url),
         "base_url": settings.base_url,
         "debug": settings.debug,
-        "host": settings.host,
-        "port": settings.port,
         "env_name": settings.env_name,
     }

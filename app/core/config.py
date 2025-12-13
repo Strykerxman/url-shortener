@@ -12,23 +12,32 @@ from pydantic import Field
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    # Database connection URL for SQLAlchemy engine initialization.
-    database_url: str = Field(default="postgresql://user:password@localhost/db")
+    # Database username for authentication.
+    database_user: str = Field(..., env="DATABASE_USER")
+    # Database password for authentication.
+    database_pw: str = Field(..., env="DATABASE_PW")
+    # Database name to connect to.
+    database_name: str = Field(..., env="DATABASE_NAME")
     # Debug mode flag: enables SQL query logging and other debug features.
     debug: bool = False
     # Base URL of the application for constructing shortened and admin URLs.
     base_url: str
-    # Host address the application binds to.
-    host: str
-    # Port number the application listens on.
-    port: int
-    # Environment name (e.g., 'development', 'production') for context-aware behavior.
+    # Environment name for context-aware behavior.
     env_name: str
+    # Database connection URL for SQLAlchemy engine initialization.
+    # This can be overridden via DATABASE_URL env variable, otherwise defaults to localhost postgres.
+    database_url: str = Field(default="", env="DATABASE_URL")
     # Configuration for loading settings from .env file.
     model_config = SettingsConfigDict(
         env_file='.env',
         env_file_encoding='utf-8'
     )
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # If DATABASE_URL not provided, construct it from individual components
+        if not self.database_url or self.database_url == "":
+            self.database_url = f"postgresql://{self.database_user}:{self.database_pw}@localhost:5432/{self.database_name}"
 
 @lru_cache
 def get_settings() -> Settings:
@@ -37,7 +46,7 @@ def get_settings() -> Settings:
     # returning the same Settings instance on subsequent calls.
     try:
         settings = Settings()
-        
+
     except Exception as e:
         # Raise an error if settings cannot be loaded from the environment.
         raise e(f"Error loading settings: {e}")
