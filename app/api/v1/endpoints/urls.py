@@ -38,6 +38,8 @@ async def forward_to_target_url(url_key: str, request: Request, db_session: Sess
 async def create_url(url: schemas.URLBase, db_session: Session = Depends(get_db)):
     # Validate the provided target URL format using the validators library.
     # The URL must include http:// or https:// protocol.
+    if db_url := crud.get_db_url_by_key(db_session, url.target_url):
+        return db_url
     if not validators.url(url.target_url):
         logging.raise_bad_request(message="Your provided URL is not valid. **Must include http:// or https://**")
 

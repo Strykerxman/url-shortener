@@ -7,3 +7,4 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 validators>=0.22.0
 requests>=2.31.0
+click>=8.1.0
