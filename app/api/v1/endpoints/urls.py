@@ -11,11 +11,12 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from redis.asyncio import Redis
 
 from app.core import logging
 from app import schemas
 from app.core.url_utils import get_admin_info
-from app.database import crud, get_db
+from app.database import crud, get_db, get_redis
 
 import validators
 
@@ -23,9 +24,20 @@ import validators
 router = APIRouter()
 
 @router.get("/{url_key}")
-async def forward_to_target_url(url_key: str, request: Request, db_session: Session = Depends(get_db)):
+async def forward_to_target_url(url_key: str, request: Request, db_session: Session = Depends(get_db), redis_client: Redis = Depends(get_redis)):
+    # First, attempt to retrieve the target URL from Redis cache for performance.
+    try:
+        if cached_url := await redis_client.get(url_key):
+            # URL found in cache: increment the click counter for analytics tracking.
+            if db_url := crud.get_db_url_by_key(db_session, url_key):
+                crud.add_click(db_session, db_url)
+            # Redirect the client to the original target URL.
+            return RedirectResponse(cached_url)
+    except Exception as e:
+        # Log cache failures but fall back to the database so redirects still work.
+        logging.logger.error("Failed to retrieve URL from Redis: %s", str(e))
     # Attempt to retrieve the URL record from the database using the provided short key.
-    if db_url := crud.get_db_url_by_key(db_session, url_key):
+    if db_url := crud.get_db_url_by_key(db_session, url_key):        
         # URL found: increment the click counter for analytics tracking.
         crud.add_click(db_session, db_url)
         # Redirect the client to the original target URL.
@@ -35,11 +47,9 @@ async def forward_to_target_url(url_key: str, request: Request, db_session: Sess
         logging.raise_not_found(request)
 
 @router.post("/url", response_model=schemas.URLInfo)
-async def create_url(url: schemas.URLBase, db_session: Session = Depends(get_db)):
+async def create_url(url: schemas.URLBase, db_session: Session = Depends(get_db), redis_client: Redis = Depends(get_redis)):
     # Validate the provided target URL format using the validators library.
     # The URL must include http:// or https:// protocol.
-    if db_url := crud.get_db_url_by_key(db_session, url.target_url):
-        return db_url
     if not validators.url(url.target_url):
         logging.raise_bad_request(message="Your provided URL is not valid. **Must include http:// or https://**")
 
@@ -51,6 +61,11 @@ async def create_url(url: schemas.URLBase, db_session: Session = Depends(get_db)
     # Set the admin secret key for the response (used for delete/update operations).
     db_url.admin_url = db_url.secret_key
 
+    try:
+        await redis_client.set(db_url.key, db_url.target_url, ex=(3600 * 24))  # Cache for 24 hours (ex is in seconds)
+    except Exception as e:
+        logging.raise_cache_error(message=f"Failed to cache URL in Redis: {str(e)}")
+        return
     # Return the created URL with both public and admin URLs.
     return db_url
 

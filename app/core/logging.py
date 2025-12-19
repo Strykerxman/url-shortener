@@ -30,4 +30,9 @@ def file_not_found(filepath):
     # Used when required configuration or resource files are missing.
     logger.error(f"Configuration file not found: {filepath}")
     raise FileNotFoundError(f"Configuration file not found: {filepath}")
-    
+
+def raise_cache_error(message):
+    # Log and raise a 500 Internal Server Error for caching issues.
+    # Used when there are problems interacting with the caching layer (e.g., Redis).
+    logger.error(f"Caching error: {message}")
+    raise HTTPException(status_code=500, detail=message)

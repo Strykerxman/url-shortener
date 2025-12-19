@@ -10,7 +10,7 @@ pool = redis.ConnectionPool(
 )
 
 async def get_redis() -> redis.Redis:
-    client = redis.Redis(connection_pool=pool)
+    client: redis.Redis = redis.Redis(connection_pool=pool)
     try:
         await client.ping()
     except redis.ConnectionError as exc:

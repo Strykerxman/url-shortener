@@ -1,99 +1,122 @@
-# url-shortener
+# URL Shortener API
 
-A simple URL shortener API built with **FastAPI**, **SQLAlchemy**, **PostgreSQL**, and **Alembic**.
+FastAPI application that persists shortened URLs in PostgreSQL, caches lookups in Redis, and manages schema changes with Alembic.
 
-## Requirements
+## Highlights
 
-### Option 1: Docker (Recommended)
-- Docker Desktop
-- Docker Compose
+- FastAPI + Uvicorn with Pydantic validation
+- SQLAlchemy ORM targeting PostgreSQL 14+
+- Redis cache layer with a 24-hour TTL per entry
+- Docker Compose topology (API, Postgres, Redis) with health checks
 
-### Option 2: Local Development
-- Python 3.10+
-- PostgreSQL 14+ (running locally)
-- pip
+## Project Layout
 
-## Setup
+```
+app/
+  api/v1/...        # FastAPI routers
+  core/...          # settings, logging, helpers
+  database/...      # SQLAlchemy session, CRUD, Redis
+  models/, schemas/ # SQLAlchemy + Pydantic definitions
+alembic/            # migration environment and versions
+compose.yaml        # docker compose stack
+```
 
-### Option 1: Using Docker (Recommended)
+## Prerequisites
 
-#### 1) Create `.env` file from template
+| Scenario                   | Requirements                             |
+| -------------------------- | ---------------------------------------- |
+| Docker (recommended)       | Docker Desktop 4+, Docker Compose v2      |
+| Local development          | Python 3.10+, pip, PostgreSQL 14+, Redis 7+ |
 
-````bash
+## 1. Configure Environment Variables
+
+1. Copy the template and edit values as needed:
+
+```cmd
 copy .env.example .env
-````
+```
 
-Edit `.env` with your desired database credentials (or use defaults).
+2. Reference values from `.env.example`:
 
-#### 2) Build and start containers
+| Variable       | Purpose                                         | Template default                         | Docker override                          |
+| -------------- | ----------------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| `DATABASE_URL` | SQLAlchemy connection string                    | `postgresql://...@db:5432/...`           | Use `compose.yaml` env substitution      |
+| `DATABASE_USER`/`PW`/`NAME` | Individual DB credentials           | `urlshortener` / `changeme...` / `urlshortener_db` | Keep in sync with Postgres service |
+| `BASE_URL`     | Base used to build public/admin links           | `http://127.0.0.1:8000`                  | Update to external hostname if exposed   |
+| `REDIS_HOST`   | Redis hostname                                  | `localhost`                              | Override to `redis` inside Compose       |
+| `REDIS_PORT`   | Redis port                                      | `6379`                                   | `6379`                                   |
 
-````bash
-docker-compose up --build
-````
+Set `REDIS_HOST=redis` for containers via the `server.environment` block in `compose.yaml` or by adjusting `.env` before composing. Update `BASE_URL` whenever the API is published under a different domain.
 
-The application will be accessible at `http://localhost:8000`. The FastAPI documentation can be found at `http://localhost:8000/docs`.
+## 2. Run with Docker Compose (Recommended)
 
-#### 3) Stop containers
+```cmd
+docker compose up --build
+```
 
-````bash
-docker-compose down
-````
+- API: http://localhost:8000
+- Docs: http://localhost:8000/docs
+- Persistent volumes: `postgres_data`, `redis_data`
 
----
+Gracefully stop everything with:
 
-### Option 2: Local Development (Windows)
+```cmd
+docker compose down
+```
 
-#### 1) Create and activate a virtual environment
+### Compose Notes
 
-````bash
+- `alembic upgrade head` runs automatically before Uvicorn starts.
+- Health checks guard startup; inspect `docker compose logs server` if the service restarts.
+
+## 3. Local Development Workflow
+
+```cmd
 py -m venv .venv
 .\.venv\Scripts\activate
-````
-
-#### 2) Install dependencies
-
-````bash
 pip install -r requirements.txt
-````
-
-#### 3) Configure the database
-
-- Create a new PostgreSQL database locally
-- Copy `.env.example` to `.env`
-- Update `DATABASE_URL` in `.env` with your local database connection:
-  ```
-  DATABASE_URL=postgresql://username:password@localhost:5432/database_name
-  ```
-
-#### 4) Run migrations
-
-````bash
 alembic upgrade head
-````
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-#### 5) Start the application
+Provision PostgreSQL and Redis instances that match the values in `.env` before running the application locally.
 
-````bash
-uvicorn app.main:app --host 0.0.0.0
-````
+## Database Migrations
 
-The application will be accessible at `http://localhost:8000`. The FastAPI documentation can be found at `http://localhost:8000/docs`.
+Generate a migration after changing models:
 
----
+```cmd
+alembic revision --autogenerate -m "describe change"
+alembic upgrade head
+```
 
-## Testing Endpoints
+The compose entrypoint already runs `alembic upgrade head`, so schema changes apply automatically in containers once a migration exists.
 
-Once the application is running, test it with:
+## API Quickstart
 
-```bash
+```cmd
 # Health check
 curl http://localhost:8000/health
 
-# API documentation (open in browser)
-http://localhost:8000/docs
+# Create a shortened URL
+curl -X POST http://localhost:8000/url \
+     -H "Content-Type: application/json" \
+     -d "{\"target_url\":\"https://example.com\"}"
+
+# Follow the short link (replace <key> with response.url)
+curl -i http://localhost:8000/<key>
+
+# Administration info (replace <secret>)
+curl http://localhost:8000/admin/<secret>
+
+# Delete/disable a link
+curl -X DELETE http://localhost:8000/admin/<secret>
 ```
 
-## Notes
+Responses include `url` (public short key) and `admin_url` (secret key).
 
-- For Docker, the database is created automatically with credentials from `.env`.
-- For local development, ensure PostgreSQL is running and the database exists before starting the app.
+## Troubleshooting
+
+- **Redis connection errors**: confirm `REDIS_HOST` matches the host reachable from the running process (`redis` inside Compose, `localhost` when developing locally). Use `docker compose exec server redis-cli -h redis ping` to validate connectivity.
+- **Database auth failures**: verify both `DATABASE_URL` and individual `DATABASE_*` vars are in sync; Alembic uses whichever is set.
+- **Stale migrations**: rerun `alembic upgrade head` after generating new revisions and restart the API.
