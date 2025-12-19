@@ -9,5 +9,6 @@
 # -------------------------------------------------------
 
 from .database import get_db
+from .caching import get_redis
 
-__all__ = ["get_db"]
+__all__ = ["get_db", "get_redis"]

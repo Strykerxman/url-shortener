@@ -8,7 +8,7 @@
 # -------------------------------------------------------
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, computed_field
 from functools import lru_cache
 
 class Settings(BaseSettings):
@@ -27,17 +27,22 @@ class Settings(BaseSettings):
     # Database connection URL for SQLAlchemy engine initialization.
     # This can be overridden via DATABASE_URL env variable, otherwise defaults to localhost postgres.
     database_url: str = Field(default="", env="DATABASE_URL")
+    # Redis server host for caching and session management.
+    redis_host: str = Field(..., env="REDIS_HOST")
+    # Redis server port
+    redis_port: int = Field(..., env="REDIS_PORT")
     # Configuration for loading settings from .env file.
     model_config = SettingsConfigDict(
         env_file='.env',
         env_file_encoding='utf-8'
     )
     
-    def __init__(self, **data):
-        super().__init__(**data)
-        # If DATABASE_URL not provided, construct it from individual components
-        if not self.database_url or self.database_url == "":
-            self.database_url = f"postgresql://{self.database_user}:{self.database_pw}@localhost:5432/{self.database_name}"
+    @computed_field
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+        return f"postgresql://{self.database_user}:{self.database_pw}@localhost:5432/{self.database_name}"
 
 @lru_cache
 def get_settings() -> Settings:
