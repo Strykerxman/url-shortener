@@ -31,16 +31,17 @@ async def forward_to_target_url(url_key: str, request: Request, db_session: Sess
             # URL found in cache: increment the click counter for analytics tracking.
             if db_url := crud.get_db_url_by_key(db_session, url_key):
                 crud.add_click(db_session, db_url)
-            # Redirect the client to the original target URL.
+
             return RedirectResponse(cached_url)
     except Exception as e:
         # Log cache failures but fall back to the database so redirects still work.
         logging.logger.error("Failed to retrieve URL from Redis: %s", str(e))
+
     # Attempt to retrieve the URL record from the database using the provided short key.
     if db_url := crud.get_db_url_by_key(db_session, url_key):        
         # URL found: increment the click counter for analytics tracking.
         crud.add_click(db_session, db_url)
-        # Redirect the client to the original target URL.
+        
         return RedirectResponse(db_url.target_url)
     else:
         # URL not found or inactive: raise a 404 error with detailed logging.
@@ -55,6 +56,7 @@ async def create_url(url: schemas.URLBase, db_session: Session = Depends(get_db)
 
     # Create a new URL record in the database with auto-generated keys.
     db_url = crud.create_db_url(db_session, url)
+    
     # Set the shortened URL key for the response (public short link).
     db_url.url = db_url.key
 

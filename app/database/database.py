@@ -16,7 +16,7 @@ settings = get_settings()  # Load application settings from environment configur
 
 # Initialize the SQLAlchemy engine with the database URL from settings.
 # echo=settings.debug enables SQL statement logging when in debug mode.
-engine = create_engine(settings.database_url, echo=settings.debug)
+engine = create_engine(settings.sqlalchemy_database_url, echo=settings.debug)
 
 # Create a sessionmaker factory bound to the engine.
 # autoflush=False prevents automatic flushing of pending changes.

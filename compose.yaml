@@ -3,26 +3,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: url_shortener_api
-    ports:
-      - 8000:8000
     env_file: .env
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
-      DATABASE_URL: postgresql://${DATABASE_USER}:${DATABASE_PW}@db:5432/${DATABASE_NAME}
-      BASE_URL: ${BASE_URL}
+      DATABASE_URL: ${DATABASE_URL}
+      BASE_URL: ${BASE_URL:-http://127.0.0.1:8000}
       ENV_NAME: docker
-      DEBUG: "false"
+      DEBUG: ${DEBUG:-false}
       REDIS_HOST: redis
-      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
-        condition: service_healthy  
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,8 +30,7 @@ services:
       - app-network
 
   db:
-    image: postgres:18-alpine
-    container_name: postgres_db
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${DATABASE_USER}
       POSTGRES_PASSWORD: ${DATABASE_PW}
@@ -42,7 +40,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,25 +49,25 @@ services:
       - app-network
 
   redis:
-    image: redis:alpine
-    container_name: redis_cache
-    ports:
-      - ${REDIS_PORT}:${REDIS_PORT}
-    command: redis-server --port ${REDIS_PORT}
+    image: redis:7-alpine
+    command: ["redis-server", "--port", "${REDIS_PORT:-6379}"]
     environment:
-      REDIS_PORT: ${REDIS_PORT}
-      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    # Uncomment to expose Redis to the host:
+    # ports:
+    #   - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
     volumes:
       - redis_data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT:-6379}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     networks:
-      - app-network    
+      - app-network
+
 volumes:
   postgres_data:
     driver: local

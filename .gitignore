@@ -1,5 +1,9 @@
 .env
 *.env
+.env.local
+.env.compose
+*.env.local
+*.env.compose
 __pycache__/
 *.pyc
 *.log

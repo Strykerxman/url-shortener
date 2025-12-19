@@ -7,11 +7,19 @@
 # to ensure consistent configuration throughout the application lifecycle.
 # -------------------------------------------------------
 
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, computed_field
 from functools import lru_cache
 
+ENV_FILE = os.getenv('ENV_FILE', '.env.local')
+
 class Settings(BaseSettings):
+    # Configuration for loading settings from .env file.
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding='utf-8'
+    )
     # Database username for authentication.
     database_user: str = Field(..., env="DATABASE_USER")
     # Database password for authentication.
@@ -31,18 +39,14 @@ class Settings(BaseSettings):
     redis_host: str = Field(..., env="REDIS_HOST")
     # Redis server port
     redis_port: int = Field(..., env="REDIS_PORT")
-    # Configuration for loading settings from .env file.
-    model_config = SettingsConfigDict(
-        env_file='.env',
-        env_file_encoding='utf-8'
-    )
     
-    @computed_field
-    @property
+    
+    @computed_field(return_type=str)
     def sqlalchemy_database_url(self) -> str:
         if self.database_url:
             return self.database_url
-        return f"postgresql://{self.database_user}:{self.database_pw}@localhost:5432/{self.database_name}"
+        else:
+            raise ValueError("DATABASE_URL is required")
 
 @lru_cache
 def get_settings() -> Settings:
@@ -53,7 +57,6 @@ def get_settings() -> Settings:
         settings = Settings()
 
     except Exception as e:
-        # Raise an error if settings cannot be loaded from the environment.
-        raise e(f"Error loading settings: {e}")
-
+        raise
     return settings
+

@@ -19,7 +19,7 @@ async def read_root():
 @app.get("/settings")
 async def read_settings():
     return {
-        "database_url": SecretStr(settings.database_url),
+        "database_url": SecretStr(settings.sqlalchemy_database_url),
         "base_url": settings.base_url,
         "debug": settings.debug,
         "env_name": settings.env_name,
