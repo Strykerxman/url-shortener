@@ -9,6 +9,3 @@ __pycache__/
 *.pyc
 *.log
 .venv/
-tests
-**/tests
-tests/
