@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     env_name: str
     # Database connection URL for SQLAlchemy engine initialization.
     # This can be overridden via DATABASE_URL env variable, otherwise defaults to localhost postgres.
-    database_url: str = Field(default="", env="DATABASE_URL")
+    database_url: str = Field(..., env="DATABASE_URL")
+    # Test database URL
+    test_database_url: str = Field(default="", env="TEST_DATABASE_URL")
     # Redis server host for caching and session management.
     redis_host: str = Field(..., env="REDIS_HOST")
     # Redis server port

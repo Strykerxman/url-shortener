@@ -9,6 +9,7 @@
 # -------------------------------------------------------
 
 from sqlalchemy.orm import Session
+from sqlalchemy import update
 
 from app.core import keygen
 from app import schemas, models
@@ -60,6 +61,19 @@ def add_click(db: Session, db_url: schemas.URL) -> models.URL:
     # Refresh the object to ensure the latest state from the database.
     db.refresh(db_url)
     return db_url
+
+def add_click_by_key(db: Session, url_key: str) -> models.URL:
+    # Increment the click counter for a URL identified by its short key.
+    # This function uses a SQL UPDATE statement for efficiency.
+    stmt = (
+        update(models.URL)
+        .where(models.URL.key == url_key, models.URL.is_active)
+        .values(clicks=models.URL.clicks + 1)
+        .returning(models.URL)
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return result.scalars().first()
 
 def deactivate_db_url_by_secret_key(db: Session, secret_key: str) -> models.URL:
     # Retrieve the URL record using the provided secret key for authentication.
