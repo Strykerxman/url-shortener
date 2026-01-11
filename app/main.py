@@ -12,9 +12,11 @@ app = FastAPI(
 app.include_router(router)
 settings = get_settings()
 
+
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the URL Shortener API"}
+
 
 @app.get("/settings")
 async def read_settings():

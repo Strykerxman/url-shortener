@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 router = APIRouter()
 
+
 @router.get("/health")
 async def health_check():
     # Check DB connection

@@ -7,19 +7,14 @@
 # to ensure consistent configuration throughout the application lifecycle.
 # -------------------------------------------------------
 
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, computed_field
 from functools import lru_cache
 
-ENV_FILE = os.getenv('ENV_FILE', '.env.local')
 
 class Settings(BaseSettings):
     # Configuration for loading settings from .env file.
-    model_config = SettingsConfigDict(
-        env_file=ENV_FILE,
-        env_file_encoding='utf-8'
-    )
+    model_config = SettingsConfigDict(env_file=".env.local", env_file_encoding="utf-8")
     # Database username for authentication.
     database_user: str = Field(..., env="DATABASE_USER")
     # Database password for authentication.
@@ -35,20 +30,18 @@ class Settings(BaseSettings):
     # Database connection URL for SQLAlchemy engine initialization.
     # This can be overridden via DATABASE_URL env variable, otherwise defaults to localhost postgres.
     database_url: str = Field(..., env="DATABASE_URL")
-    # Test database URL
-    test_database_url: str = Field(default="", env="TEST_DATABASE_URL")
     # Redis server host for caching and session management.
     redis_host: str = Field(..., env="REDIS_HOST")
     # Redis server port
     redis_port: int = Field(..., env="REDIS_PORT")
-    
-    
+
     @computed_field(return_type=str)
     def sqlalchemy_database_url(self) -> str:
         if self.database_url:
             return self.database_url
         else:
             raise ValueError("DATABASE_URL is required")
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -58,7 +51,6 @@ def get_settings() -> Settings:
     try:
         settings = Settings()
 
-    except Exception as e:
+    except Exception:
         raise
     return settings
-

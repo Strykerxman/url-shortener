@@ -11,6 +11,7 @@
 from app.database.database import Base
 from sqlalchemy import Column, Integer, String, Boolean
 
+
 class URL(Base):
     # Table name in the database.
     __tablename__ = "urls"
@@ -36,4 +37,3 @@ class URL(Base):
     def __repr__(self):
         # Return a string representation of the URL object for debugging and logging.
         return f"<URL(id={self.id}, key={self.key}, target_url={self.target_url}, is_active={self.is_active}, clicks={self.clicks})>"
-    

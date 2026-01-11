@@ -19,12 +19,13 @@ def get_url() -> str:
     url = config.get_main_option("sqlalchemy.url")
     if url:
         return url
-    
+
     import os
+
     env_url = os.getenv("DATABASE_URL")
     if env_url:
         return env_url
-    
+
     return get_settings().sqlalchemy_database_url
 
 
@@ -56,10 +57,12 @@ def run_migrations_online():
     else:
         do_run_migrations(connectable)
 
+
 def do_run_migrations(connection):
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

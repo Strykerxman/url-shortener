@@ -8,11 +8,13 @@
 
 from pydantic import BaseModel
 
+
 class URLBase(BaseModel):
     # Base schema for URL creation requests.
     # Contains only the target URL that the user wants to shorten.
     # Used as the input model for POST /url endpoint.
     target_url: str
+
 
 class URL(URLBase):
     # Extended URL schema including computed fields from the database.
@@ -26,6 +28,7 @@ class URL(URLBase):
         # Enable conversion from SQLAlchemy ORM models using from_attributes.
         # This allows Pydantic to populate the schema from ORM objects directly.
         from_attributes = True
+
 
 class URLInfo(URL):
     # Complete URL information schema for API responses.
