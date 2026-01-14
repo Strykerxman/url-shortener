@@ -87,10 +87,8 @@ async def test_get_admin_info_endpoint_includes_full_urls(api_client, test_setti
 
 @pytest.mark.asyncio
 async def test_delete_url_deactivates_and_blocks_redirect(
-    test_settings, db_session, api_client
+    db_session, api_client
 ):
-    base_url = test_settings.base_url
-
     payload = {"target_url": "https://delete-me.com"}
     create_response = await api_client.post("/url", json=payload)
     secret_key = create_response.json()["admin_url"]
@@ -109,7 +107,7 @@ async def test_delete_url_deactivates_and_blocks_redirect(
 
 @pytest.mark.asyncio
 async def test_forward_falls_back_when_redis_errors(
-    test_settings, mocked_redis, api_client
+    mocked_redis, api_client
 ):
     old_get_side_effect = mocked_redis.get.side_effect
     mocked_redis.get.side_effect = Exception("redis down")

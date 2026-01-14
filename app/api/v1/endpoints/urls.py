@@ -17,7 +17,7 @@ import asyncio
 from app.core import logging
 from app import schemas
 from app.core.config import get_settings
-from app.core.url_utils import get_admin_info
+from app.core.url_utils import get_admin_info, validate_url_key
 from app.database import crud, get_db, get_redis
 
 import validators
@@ -33,39 +33,27 @@ async def forward_to_target_url(
     db_session: Session = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
 ):
+    # Validate the URL key format before proceeding.
+    if not validate_url_key(url_key):
+        logging.raise_not_found(request)
     # Try cache first with a short timeout; on any cache error/timeouts, fall back to DB.
     try:
-        # small timeout so Redis latency doesn't slow down requests
-        cached_url = await asyncio.wait_for(redis_client.get(url_key), timeout=0.25)
+        cached_url = await redis_client.get(url_key)
         if cached_url:
-            # confirm the DB record still exists & is active before redirecting
-            db_url = crud.add_click_by_key(db_session, url_key)
-            if db_url:
-                logging.logger.info("Cache hit for key=%s; redirecting", url_key)
+            if db_url := crud.add_click_by_key(db_session, url_key):
+
                 return RedirectResponse(cached_url)
-            else:
-                # stale cache: attempt best-effort removal, but don't fail if delete errors
-                try:
-                    await asyncio.wait_for(redis_client.delete(url_key), timeout=0.2)
-                except Exception:
-                    logging.logger.warning(
-                        "Failed to delete stale redis key=%s", url_key, exc_info=True
-                    )
-                # fall through to return 404 below
-    except asyncio.TimeoutError:
+            await redis_client.delete(url_key)
+            logging.raise_not_found(request)
+    except Exception as e:
         logging.logger.warning(
-            "Redis GET timed out for key=%s; falling back to DB", url_key
-        )
-    except Exception:
-        logging.logger.error(
-            "Failed to retrieve URL from Redis (key=%s); falling back to DB",
+            "Redis get failed for key=%s; falling back to DB. Error: %s",
             url_key,
+            e,
             exc_info=True,
         )
-
     # DB fallback
     if db_url := crud.add_click_by_key(db_session, url_key):
-        logging.logger.info("Cache miss for key=%s; fetched from DB", url_key)
         await _safe_redis_set(redis_client, db_url)
         return RedirectResponse(db_url.target_url)
 
@@ -130,7 +118,7 @@ async def delete_url(
     secret_key: str, request: Request, db_session: Session = Depends(get_db)
 ):
     # Retrieve and deactivate the URL record using the provided secret key for authentication.
-    if db_url := crud.deactivate_db_url_by_secret_key(db_session, secret_key):
+    if _ := crud.deactivate_db_url_by_secret_key(db_session, secret_key):
         # URL successfully deactivated (soft delete): return confirmation message.
         return {"detail": f"URL with secret key {secret_key} has been deactivated."}
     else:

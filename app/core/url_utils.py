@@ -27,3 +27,6 @@ def get_admin_info(db_url: models.URL, settings: Settings) -> schemas.URLInfo:
     db_url.admin_url = str(base_url.replace(path=f"admin/{db_url.secret_key}"))
 
     return db_url
+
+def validate_url_key(key: str) -> bool:
+    return key.isalnum() and len(key) == 5

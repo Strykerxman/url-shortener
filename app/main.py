@@ -9,7 +9,8 @@ app = FastAPI(
     description="An API for shortening URLs and managing them.",
     version="1.0.0",
 )
-app.include_router(router)
+
+
 settings = get_settings()
 
 
@@ -26,3 +27,6 @@ async def read_settings():
         "debug": settings.debug,
         "env_name": settings.env_name,
     }
+
+
+app.include_router(router)
