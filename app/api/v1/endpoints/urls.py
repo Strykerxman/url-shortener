@@ -8,15 +8,19 @@
 # use dependency injection to obtain database sessions.
 # -------------------------------------------------------
 
+import io
+
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 from redis.asyncio import Redis
 import asyncio
+import qrcode
 
 from app.core import logging
 from app import schemas
 from app.core.config import get_settings
+from app.core.limiter import limiter
 from app.core.url_utils import get_admin_info, validate_url_key
 from app.database import crud, get_db, get_redis
 
@@ -27,6 +31,7 @@ router = APIRouter()
 
 
 @router.get("/{url_key}")
+@limiter.limit("120/minute")
 async def forward_to_target_url(
     url_key: str,
     request: Request,
@@ -62,7 +67,9 @@ async def forward_to_target_url(
 
 
 @router.post("/url", response_model=schemas.URLInfo)
+@limiter.limit("30/minute")
 async def create_url(
+    request: Request,
     url: schemas.URLBase,
     db_session: Session = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
@@ -74,7 +81,7 @@ async def create_url(
             message="Your provided URL is not valid. **Must include http:// or https://**"
         )
 
-    # Create a new URL record in the database with auto-generated keys.
+    # Create a new URL record in the database with auto-generated (or custom) keys.
     db_url = crud.create_db_url(db_session, url)
 
     # Set the shortened URL key for the response (public short link).
@@ -124,6 +131,33 @@ async def delete_url(
     else:
         # URL not found or already inactive: raise a 404 error with detailed logging.
         logging.raise_not_found(request)
+
+
+@router.get("/qr/{url_key}", name="qr code", response_class=Response)
+async def get_qr_code(
+    url_key: str,
+    request: Request,
+    db_session: Session = Depends(get_db),
+    settings=Depends(get_settings),
+):
+    """Return a QR code PNG for the shortened URL identified by *url_key*."""
+    if not validate_url_key(url_key):
+        logging.raise_not_found(request)
+
+    db_url = crud.get_db_url_by_key(db_session, url_key)
+    if not db_url:
+        logging.raise_not_found(request)
+
+    from starlette.datastructures import URL as StarletteURL
+
+    base = StarletteURL(settings.base_url)
+    short_url = str(base.replace(path=url_key))
+
+    img = qrcode.make(short_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="image/png")
 
 
 async def _safe_redis_set(redis_client: Redis, db_url):

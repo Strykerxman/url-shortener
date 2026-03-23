@@ -29,4 +29,4 @@ def get_admin_info(db_url: models.URL, settings: Settings) -> schemas.URLInfo:
     return db_url
 
 def validate_url_key(key: str) -> bool:
-    return key.isalnum() and len(key) == 5
+    return key.isalnum() and 3 <= len(key) <= 20

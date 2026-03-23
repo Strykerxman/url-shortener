@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     redis_host: str = Field(..., env="REDIS_HOST")
     # Redis server port
     redis_port: int = Field(..., env="REDIS_PORT")
+    # Comma-separated list of allowed CORS origins.
+    # Use "*" to allow all origins (default, suitable for development / public APIs).
+    # Example: "https://app.example.com,https://admin.example.com"
+    cors_origins: str = "*"
 
     @computed_field(return_type=str)
     def sqlalchemy_database_url(self) -> str:
