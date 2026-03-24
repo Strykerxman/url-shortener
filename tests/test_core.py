@@ -1,8 +1,8 @@
 import asyncio
 import string
-from unittest.mock import AsyncMock
 
 import pytest
+import fakeredis.aioredis
 from fastapi import HTTPException, Request
 
 from app import models
@@ -72,9 +72,16 @@ def test_logging_helpers_raise():
 
 @pytest.mark.asyncio
 async def test_safe_redis_set_handles_timeout():
-    client = AsyncMock()
-    client.set = AsyncMock(side_effect=asyncio.TimeoutError())
+    # Uses fakeredis — a real in-memory implementation, not an AsyncMock.
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
 
+    # Verify normal writes work through safe_redis_set.
     await caching.safe_redis_set(client, "key", "value", ex=10)
+    assert await client.get("key") == "value"
 
-    client.set.assert_awaited()
+    # Verify that asyncio.TimeoutError is caught and does not propagate.
+    import unittest.mock as mock
+
+    with mock.patch("app.database.caching.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+        # Should not raise — the helper swallows the timeout.
+        await caching.safe_redis_set(client, "timeout_key", "value", ex=10)

@@ -15,6 +15,7 @@ from redis.asyncio import Redis
 import asyncio
 
 from app.core import logging
+from app.core.limiter import limiter
 from app import schemas
 from app.core.config import get_settings
 from app.core.url_utils import get_admin_info, validate_url_key
@@ -27,6 +28,7 @@ router = APIRouter()
 
 
 @router.get("/{url_key}")
+@limiter.limit("60/minute")
 async def forward_to_target_url(
     url_key: str,
     request: Request,
@@ -62,8 +64,10 @@ async def forward_to_target_url(
 
 
 @router.post("/url", response_model=schemas.URLInfo)
+@limiter.limit("10/minute")
 async def create_url(
     url: schemas.URLBase,
+    request: Request,
     db_session: Session = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
 ):

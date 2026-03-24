@@ -1,6 +1,8 @@
-from pydantic import SecretStr
 from fastapi import FastAPI
-from .core.config import get_settings
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from .core.limiter import limiter
 from .api.v1 import router
 
 
@@ -10,23 +12,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
-
-settings = get_settings()
+# Attach the rate limiter to app state so slowapi can read it per-request.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.get("/")
 async def read_root():
     return {"message": "Welcome to the URL Shortener API"}
-
-
-@app.get("/settings")
-async def read_settings():
-    return {
-        "database_url": SecretStr(settings.sqlalchemy_database_url),
-        "base_url": settings.base_url,
-        "debug": settings.debug,
-        "env_name": settings.env_name,
-    }
 
 
 app.include_router(router)

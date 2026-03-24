@@ -1,19 +1,16 @@
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock
+import fakeredis.aioredis
 from httpx import AsyncClient, ASGITransport
-from collections import defaultdict
 from starlette.datastructures import URL
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, computed_field
+from pydantic import computed_field
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from alembic import command
 from alembic.config import Config
-
-from redis.asyncio import Redis
 
 from app.main import app
 
@@ -22,8 +19,8 @@ class TestSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env.test", env_file_encoding="utf-8", extra="ignore"
     )
-    database_url: str = Field(..., env="DATABASE_URL")
-    base_url: str
+    database_url: str
+    base_url: str = "http://testserver"
     debug: bool = True
     env_name: str = "test"
 
@@ -73,33 +70,20 @@ def override_get_admin_info(test_settings):
     app.dependency_overrides.pop(url_utils.get_admin_info, None)
 
 
-@pytest.fixture(scope="session")
-def mocked_redis():
-    storage = defaultdict(lambda: None)
-    mock_redis = AsyncMock(spec=Redis)
-
-    mock_redis.get = AsyncMock()
-    mock_redis.set = AsyncMock()
-    mock_redis.delete = AsyncMock()
-
-    mock_redis.get.side_effect = lambda key: storage.get(key)
-    mock_redis.set.side_effect = (
-        lambda key, val, ex=3600 * 24: storage.update({key: val}) or True
-    )
-    mock_redis.delete.side_effect = lambda key: storage.pop(key, None) is not None
-
-    mock_redis.ping = AsyncMock()
-    return mock_redis
+@pytest.fixture(scope="function")
+def fake_redis():
+    """Real in-memory Redis implementation via fakeredis — no mocks."""
+    return fakeredis.aioredis.FakeRedis(decode_responses=True)
 
 
 @pytest.fixture(autouse=True, scope="function")
-def mock_get_redis(mocked_redis):
+def override_get_redis(fake_redis):
     from app.database import get_redis
 
-    async def _get_mock_redis():
-        return mocked_redis
+    async def _get_fake_redis():
+        return fake_redis
 
-    app.dependency_overrides[get_redis] = _get_mock_redis
+    app.dependency_overrides[get_redis] = _get_fake_redis
     yield
     app.dependency_overrides.pop(get_redis, None)
 

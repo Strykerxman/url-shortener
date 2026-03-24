@@ -5,9 +5,12 @@
 .env.compose
 *.env.local
 *.env.compose
+# .env.test is intentionally committed — it contains only SQLite/localhost test config, no secrets.
+!.env.test
 __pycache__/
 *.pyc
 *.log
 .venv/
 .ruff_cache/
 .pytest_cache
+test.db

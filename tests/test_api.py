@@ -1,6 +1,5 @@
 import pytest
 from fastapi import status
-from unittest.mock import AsyncMock
 
 from app import models
 
@@ -12,13 +11,8 @@ async def test_health_check(api_client):
     assert response.json() == {"status": "db healthy"}
 
 
-# @pytest.mark.asyncio
-# async def test_health_check_db_failure(override_settings, override_db):
-#     pass
-
-
 @pytest.mark.asyncio
-async def test_create_short_url(api_client, db_session, mocked_redis: AsyncMock):
+async def test_create_short_url(api_client, db_session, fake_redis):
     # Create a test payload
     payload = {"target_url": "https://example.com"}
     # Post it to the server and wait for a response
@@ -39,10 +33,24 @@ async def test_create_short_url(api_client, db_session, mocked_redis: AsyncMock)
     )
     assert db_row.target_url == payload["target_url"]
 
-    # Cache check
-    mocked_redis.set.assert_awaited_with(url_key, payload["target_url"], ex=3600 * 24)
-    cached = await mocked_redis.get(url_key)
+    # Cache check via fakeredis (real in-memory implementation)
+    cached = await fake_redis.get(url_key)
     assert cached == payload["target_url"]
+
+
+@pytest.mark.asyncio
+async def test_create_short_url_with_expiry(api_client, db_session):
+    payload = {"target_url": "https://example.com", "expires_at": "2099-01-01T00:00:00Z"}
+    response = await api_client.post("/url", json=payload)
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert data["expires_at"] is not None
+    url_key = data["url"]
+
+    db_row: models.URL = (
+        db_session.query(models.URL).filter(models.URL.key == url_key).first()
+    )
+    assert db_row.expires_at is not None
 
 
 @pytest.mark.asyncio
@@ -54,6 +62,19 @@ async def test_forward_to_target_url(api_client):
     response = await api_client.get(f"/{url_key}", follow_redirects=False)
     assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
     assert response.headers["location"] == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_expired_url_returns_404(api_client, db_session):
+    # Create a URL that is already expired.
+    payload = {"target_url": "https://expired.com", "expires_at": "2000-01-01T00:00:00Z"}
+    response = await api_client.post("/url", json=payload)
+    assert response.status_code == status.HTTP_200_OK
+    url_key = response.json()["url"]
+
+    # Redirect should be blocked since the URL is expired.
+    redirect = await api_client.get(f"/{url_key}", follow_redirects=False)
+    assert redirect.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -107,17 +128,35 @@ async def test_delete_url_deactivates_and_blocks_redirect(
 
 @pytest.mark.asyncio
 async def test_forward_falls_back_when_redis_errors(
-    mocked_redis, api_client
+    fake_redis, api_client
 ):
-    old_get_side_effect = mocked_redis.get.side_effect
-    mocked_redis.get.side_effect = Exception("redis down")
-
+    # Seed the URL into the DB first, then simulate a Redis failure.
     payload = {"target_url": "https://fallback.com"}
     create_response = await api_client.post("/url", json=payload)
     url_key = create_response.json()["url"]
 
+    # Patch the fake_redis.get to raise, simulating a Redis outage.
+    original_get = fake_redis.get
+
+    async def _failing_get(key):
+        raise ConnectionError("redis down")
+
+    fake_redis.get = _failing_get
+
     redirect_response = await api_client.get(f"/{url_key}", follow_redirects=False)
+
+    fake_redis.get = original_get  # restore
 
     assert redirect_response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
     assert redirect_response.headers["location"] == payload["target_url"]
-    mocked_redis.get.side_effect = old_get_side_effect
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_create_url(api_client):
+    """POST /url is capped at 10 requests per minute per IP."""
+    payload = {"target_url": "https://rate-limit-test.com"}
+    responses = [
+        await api_client.post("/url", json=payload) for _ in range(11)
+    ]
+    status_codes = [r.status_code for r in responses]
+    assert status.HTTP_429_TOO_MANY_REQUESTS in status_codes
