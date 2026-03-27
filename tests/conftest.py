@@ -135,6 +135,7 @@ def db_session(setup_test_db):
     yield session
 
     session.close()
-    transaction.rollback()
+    if transaction.is_active:
+        transaction.rollback()
     connection.close()
     app.dependency_overrides.pop(get_db, None)

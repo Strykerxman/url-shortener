@@ -121,3 +121,51 @@ async def test_forward_falls_back_when_redis_errors(
     assert redirect_response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
     assert redirect_response.headers["location"] == payload["target_url"]
     mocked_redis.get.side_effect = old_get_side_effect
+
+@pytest.mark.asyncio
+async def test_same_url_diff_keys(api_client, db_session):
+    payload = {"target_url": "https://same-url.com"}
+
+    response1 = await api_client.post("/url", json=payload)
+    response2 = await api_client.post("/url", json=payload)
+
+    assert response1.status_code == status.HTTP_200_OK
+    assert response2.status_code == status.HTTP_200_OK
+
+    db_row1: models.URL = (
+        db_session.query(models.URL)
+        .filter(models.URL.key == response1.json()["url"])
+        .first()
+    )
+
+    db_row2: models.URL = (
+        db_session.query(models.URL)
+        .filter(models.URL.key == response2.json()["url"])
+        .first()
+    )
+
+    assert db_row1.target_url == db_row2.target_url
+    assert db_row1.key != db_row2.key
+
+@pytest.mark.asyncio
+async def test_click_atomicity(api_client, db_session):
+    payload = {"target_url": "https://example.com"}
+
+    response = await api_client.post("/url", json=payload)
+    assert response.status_code == status.HTTP_200_OK
+
+    url_key = response.json()["url"]
+
+    n_requests = 3
+
+    for _ in range(n_requests):
+        get_request = await api_client.get(f"/{url_key}", follow_redirects=False)
+
+    db_row: models.URL = (
+        db_session.query(models.URL)
+        .filter(models.URL.key == url_key)
+        .first()
+    )
+
+    assert db_row.clicks == n_requests
+     

@@ -47,3 +47,4 @@ def test_deactivate_db_url_by_secret_key(db_session, monkeypatch):
 
     assert deactivated.is_active is False
     assert crud.get_db_url_by_key(db_session, db_url.key) is None
+    assert crud.get_db_url_by_secret_key(db_session, db_url.secret_key) is None

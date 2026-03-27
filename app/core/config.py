@@ -45,12 +45,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    # Retrieve and cache the application settings.
-    # The lru_cache decorator ensures this function is called only once,
-    # returning the same Settings instance on subsequent calls.
-    try:
-        settings = Settings()
-
-    except Exception:
-        raise
-    return settings
+    return Settings()
