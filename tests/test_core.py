@@ -11,27 +11,33 @@ from app.database import caching
 
 
 def test_create_key_length_and_charset():
-    key = keygen.create_key(6)
-    assert len(key) == 6
-    allowed = set(string.ascii_uppercase + string.digits)
+    key = keygen.create_key(7)
+    assert len(key) == 7
+    allowed = set(string.ascii_letters + string.digits)
     assert all(char in allowed for char in key)
 
 
 def test_create_unique_key_avoids_existing(db_session, monkeypatch):
     existing = models.URL(
-        target_url="https://exists.com", key="EXIST", secret_key="EXIST_SECRET"
+        target_url="https://exists.com", key="EXIST77", secret_key="EXIST_SECRET"
     )
     db_session.add(existing)
     db_session.commit()
 
-    keys = iter(["EXIST", "UNIQ2"])
-    monkeypatch.setattr(keygen, "create_key", lambda length=5: next(keys))
+    keys = iter(["EXIST77", "UNIQ2RR"])
+    monkeypatch.setattr(keygen, "create_key", lambda length=7: next(keys))
 
     unique_key = keygen.create_unique_key(db_session)
-    assert unique_key == "UNIQ2"
+    assert unique_key == "UNIQ2RR"
 
 
-def test_get_admin_info_builds_full_urls(test_settings, override_get_admin_info):
+def test_get_admin_info_returns_bearer_format(test_settings):
+    """
+    Test that get_admin_info() now returns admin_url in Bearer token format.
+    Security improvement: secrets are now in Authorization header, not URL path.
+    """
+    from app.core import url_utils
+    
     db_url = models.URL(
         target_url="https://example.com",
         key="ABCDE",
@@ -39,12 +45,15 @@ def test_get_admin_info_builds_full_urls(test_settings, override_get_admin_info)
     )
     config_base_url = test_settings.base_url
 
-    admin_info = override_get_admin_info(db_url)
+    admin_info = url_utils.get_admin_info(db_url, test_settings)
 
+    # Public shortened URL should include key
     assert admin_info.url.startswith(config_base_url)
     assert admin_info.url.endswith("ABCDE")
-    assert admin_info.admin_url.startswith(f"{config_base_url}/admin/")
-    assert admin_info.admin_url.endswith("ABCDE_SECRET")
+    
+    # Admin URL should now show Bearer format instruction (not the old URL format)
+    assert admin_info.admin_url.startswith("Use Authorization header: Bearer ")
+    assert "ABCDE_SECRET" in admin_info.admin_url
 
 
 def test_logging_helpers_raise():

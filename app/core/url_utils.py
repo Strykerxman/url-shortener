@@ -14,7 +14,7 @@ from app import models, schemas
 
 def get_admin_info(db_url: models.URL, settings: Settings) -> schemas.URLInfo:
     # Construct and return URL information for administrative purposes.
-    # This function creates both the public shortened URL and the admin URL
+    # This function creates both the public shortened URL and the admin endpoint info
     # by combining the application's base URL with the generated keys.
     # Parse the base URL from application settings.
     base_url = URL(settings.base_url)
@@ -22,11 +22,13 @@ def get_admin_info(db_url: models.URL, settings: Settings) -> schemas.URLInfo:
     # Construct the public shortened URL using the short key.
     # Example: https://127.0.0.1:8000/ABCDEF
     db_url.url = str(base_url.replace(path=db_url.key))
-    # Construct the admin URL using the secret key for authentication.
-    # Example: https://127.0.0.1:8000/admin/ABCDEF_GHIJKLMN
-    db_url.admin_url = str(base_url.replace(path=f"admin/{db_url.secret_key}"))
+    # NOTE: The secret_key is now transmitted via Authorization header, not URL path.
+    # The admin_url field now contains the endpoint documentation instead of the secret.
+    # SECURITY: Secrets in Authorization headers prevent leakage via logs, browser history,
+    # and observability tooling. The secret_key field below contains the Bearer token.
+    db_url.admin_url = f"Use Authorization header: Bearer {db_url.secret_key}"
 
     return db_url
 
 def validate_url_key(key: str) -> bool:
-    return key.isalnum() and len(key) == 5
+    return key.isalnum() and len(key) == 7

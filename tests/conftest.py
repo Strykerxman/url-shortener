@@ -1,19 +1,16 @@
+from collections import defaultdict
+from unittest.mock import AsyncMock
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock
-from httpx import AsyncClient, ASGITransport
-from collections import defaultdict
-from starlette.datastructures import URL
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, computed_field
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from alembic import command
 from alembic.config import Config
-
+from httpx import ASGITransport, AsyncClient
+from pydantic import Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 
@@ -57,20 +54,40 @@ def override_get_settings(test_settings):
     app.dependency_overrides.pop(get_settings, None)
 
 
-@pytest.fixture(autouse=True, scope="function")
-def override_get_admin_info(test_settings):
-    from app.core import url_utils
+@pytest.fixture(scope="function")
+def extract_bearer_token():
+    """
+    Helper to extract the Bearer token from an admin_url response value.
+    
+    Since admin_url now contains: "Use Authorization header: Bearer <token>",
+    this extracts just the token part.
+    
+    Example:
+        response = await api_client.post("/url", ...)
+        token = extract_bearer_token(response.json()["admin_url"])
+        headers = {"Authorization": f"Bearer {token}"}
+    """
+    def _extract(admin_url_str: str) -> str:
+        # Format: "Use Authorization header: Bearer <secret_key>"
+        if "Bearer " not in admin_url_str:
+            raise ValueError(f"Could not extract Bearer token from: {admin_url_str}")
+        return admin_url_str.split("Bearer ")[1]
+    return _extract
 
-    def _mock_get_admin_info(db_url):
-        base_url = URL(test_settings.base_url)
-        db_url.url = str(base_url.replace(path=db_url.key))
-        db_url.admin_url = str(base_url.replace(path=f"admin/{db_url.secret_key}"))
 
-        return db_url
-
-    app.dependency_overrides[url_utils.get_admin_info] = _mock_get_admin_info
-    yield _mock_get_admin_info
-    app.dependency_overrides.pop(url_utils.get_admin_info, None)
+@pytest.fixture(scope="function")
+def bearer_token_header(extract_bearer_token):
+    """
+    Helper to create a complete Authorization header dict for API requests.
+    
+    Usage:
+        token = "my_secret_key"
+        headers = bearer_token_header(token)
+        response = await api_client.get("/admin/info", headers=headers)
+    """
+    def _create_header(token: str) -> dict:
+        return {"Authorization": f"Bearer {token}"}
+    return _create_header
 
 
 @pytest.fixture(scope="session")
@@ -106,8 +123,11 @@ def mock_get_redis(mocked_redis):
 
 @pytest.fixture(scope="session")
 def setup_test_db(test_settings):
+    from app.database.database import init_db
+    init_db()  # Ensure global engine is initialized for tests
+    
     settings = test_settings
-    engine = create_engine(settings.sqlalchemy_database_url, future=True)
+    from app.database.database import engine
     alembic_cfg = Config("alembic.ini")
     alembic_cfg.set_main_option("sqlalchemy.url", settings.sqlalchemy_database_url)
 

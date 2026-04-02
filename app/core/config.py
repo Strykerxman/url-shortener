@@ -2,47 +2,37 @@
 # Application Configuration Settings
 # -------------------------------------------------------
 # This module defines the application's configuration settings using Pydantic.
-# Settings are loaded from environment variables via a .env file.
-# The Settings class is a singleton accessed through the cached get_settings() function
-# to ensure consistent configuration throughout the application lifecycle.
+# Settings are loaded from environment variables and optional .env files.
+# The cached settings object can be cleared in tests to avoid config leakage.
 # -------------------------------------------------------
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, computed_field
 from functools import lru_cache
+
+from pydantic import Field, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Configuration for loading settings from .env file.
-    model_config = SettingsConfigDict(env_file=".env.local", env_file_encoding="utf-8")
-    # Database username for authentication.
-    database_user: str = Field(..., env="DATABASE_USER")
-    # Database password for authentication.
-    database_pw: str = Field(..., env="DATABASE_PW")
-    # Database name to connect to.
-    database_name: str = Field(..., env="DATABASE_NAME")
-    # Debug mode flag: enables SQL query logging and other debug features.
+    model_config = SettingsConfigDict(
+        env_file=[".env.local", ".env"],
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    database_user: str = Field(default="urlshortener", env="DATABASE_USER")
+    database_pw: str = Field(default="changeme", env="DATABASE_PW")
+    database_name: str = Field(default="urlshortener_db", env="DATABASE_NAME")
     debug: bool = False
-    # Base URL of the application for constructing shortened and admin URLs.
-    base_url: str
-    # Environment name for context-aware behavior.
-    env_name: str
-    # Database connection URL for SQLAlchemy engine initialization.
-    # This can be overridden via DATABASE_URL env variable, otherwise defaults to localhost postgres.
+    base_url: str = Field(default="http://127.0.0.1:8000", env="BASE_URL")
+    env_name: str = Field(default="development", env="ENV_NAME")
     database_url: str = Field(..., env="DATABASE_URL")
-    # Redis server host for caching and session management.
-    redis_host: str = Field(..., env="REDIS_HOST")
-    # Redis server port
-    redis_port: int = Field(..., env="REDIS_PORT")
+    redis_host: str = Field(default="localhost", env="REDIS_HOST")
+    redis_port: int = Field(default=6379, env="REDIS_PORT")
 
     @computed_field(return_type=str)
     def sqlalchemy_database_url(self) -> str:
-        if self.database_url:
-            return self.database_url
-        else:
-            raise ValueError("DATABASE_URL is required")
+        return self.database_url
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()

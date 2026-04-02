@@ -14,20 +14,22 @@ from app.database import crud
 from sqlalchemy.orm import Session
 
 
-def create_key(length: int = 5) -> str:
+def create_key(length: int = 7) -> str:
     # Generate a random cryptographic key of specified length.
-    # Uses uppercase letters (A-Z) and digits (0-9) for URL-safe representation.
-    # The secrets module provides cryptographically strong random generation.
-    chars = string.ascii_uppercase + string.digits
+    # We increased default length from 5 to 7 characters.
+    # REASONING: 62^5 (~916 million) is enumerable. 
+    # 62^7 (~3.5 trillion) makes brute-force "guessing" impractical for a small service.
+    chars = string.ascii_uppercase + string.ascii_lowercase + string.digits
     return "".join(secrets.choice(chars) for _ in range(length))
 
 
 def create_unique_key(db: Session) -> str:
     # Generate a random key and ensure it does not already exist in the database.
-    # Collision probability is extremely low, but this function guarantees uniqueness
-    # by querying the database and regenerating if a collision is found.
-    key = create_key()
-    # Keep generating new keys until a unique one is found.
-    while crud.get_db_url_by_key(db, key):
-        key = create_key()
+    # Collision probability is extremely low, but this function guarantees uniqueness.
+    # SECURITY/LOGIC: We check ALL keys (even inactive/soft-deleted) to prevent
+    # hijacking or unexpected behavior when reusing recycled IDs.
+    key = create_key(length=7)
+    # Keep generating new keys until a unique one is found across all records.
+    while crud.get_any_db_url_by_key(db, key):
+        key = create_key(length=7)
     return key

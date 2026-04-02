@@ -67,41 +67,115 @@ async def test_create_url_invalid_format(api_client):
 
 
 @pytest.mark.asyncio
-async def test_get_admin_info_endpoint_includes_full_urls(api_client, test_settings):
+async def test_get_admin_info_requires_bearer_token(api_client):
+    """Test that /admin/info endpoint requires a valid Authorization header."""
+    # Missing header should return 401
+    response = await api_client.get("/admin/info")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Missing Authorization header" in response.json()["detail"]
+
+    # Invalid header format should return 401
+    response = await api_client.get("/admin/info", headers={"Authorization": "Basic token"})
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Invalid Authorization header format" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_get_admin_info_endpoint_returns_bearer_format(
+    api_client, test_settings, extract_bearer_token, bearer_token_header
+):
+    """
+    Test that /admin/info endpoint:
+    1. Returns admin_url in Bearer token format (not URL path)
+    2. Accepts Authorization header for authentication
+    3. Does NOT accept URL-path secrets anymore
+    """
     base_url = test_settings.base_url
     payload = {"target_url": "https://example.com"}
+    
+    # Create shortened URL
     create_response = await api_client.post("/url", json=payload)
-    secret_key = create_response.json()["admin_url"]
-    url_key = create_response.json()["url"]
-
-    admin_response = await api_client.get(f"/admin/{secret_key}")
-
+    assert create_response.status_code == status.HTTP_200_OK
+    
+    create_data = create_response.json()
+    url_key = create_data["url"]
+    admin_url_response = create_data["admin_url"]
+    
+    # admin_url should now be in format: "Use Authorization header: Bearer <token>"
+    assert admin_url_response.startswith("Use Authorization header: Bearer ")
+    
+    # Extract the actual bearer token
+    secret_token = extract_bearer_token(admin_url_response)
+    
+    # Now call /admin/info with the Bearer token in Authorization header
+    admin_response = await api_client.get(
+        "/admin/info",
+        headers=bearer_token_header(secret_token)
+    )
+    
     assert admin_response.status_code == status.HTTP_200_OK
     data = admin_response.json()
     assert data["target_url"] == payload["target_url"]
     assert data["url"].startswith(f"{base_url}/")
     assert data["url"].endswith(url_key)
-    assert data["admin_url"].startswith(f"{base_url}/admin/")
-    assert data["admin_url"].endswith(secret_key)
+    # admin_url in response is also in Bearer format
+    assert data["admin_url"].startswith("Use Authorization header: Bearer ")
+
+
+@pytest.mark.asyncio
+async def test_get_admin_info_with_wrong_token(api_client, bearer_token_header):
+    """Test that providing a wrong secret_key returns 404."""
+    response = await api_client.get(
+        "/admin/info",
+        headers=bearer_token_header("wrong_token_that_has_never_been_created")
+    )
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_delete_url_requires_bearer_token(api_client):
+    """Test that /admin/delete endpoint requires a valid Authorization header."""
+    # Missing header should return 401
+    response = await api_client.delete("/admin/delete")
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 @pytest.mark.asyncio
 async def test_delete_url_deactivates_and_blocks_redirect(
-    db_session, api_client
+    db_session, api_client, extract_bearer_token, bearer_token_header
 ):
+    """
+    Test that DELETE /admin/delete (with Bearer token):
+    1. Deactivates the URL in the database
+    2. Blocks subsequent redirects (404)
+    """
     payload = {"target_url": "https://delete-me.com"}
     create_response = await api_client.post("/url", json=payload)
-    secret_key = create_response.json()["admin_url"]
-    url_key = create_response.json()["url"]
-
-    delete_response = await api_client.delete(f"/admin/{secret_key}")
-    blocked_response = await api_client.get(f"/{url_key}", follow_redirects=False)
-
+    assert create_response.status_code == status.HTTP_200_OK
+    
+    create_data = create_response.json()
+    url_key = create_data["url"]
+    admin_url_response = create_data["admin_url"]
+    
+    # Extract bearer token from response
+    secret_token = extract_bearer_token(admin_url_response)
+    
+    # Delete via Authorization header
+    delete_response = await api_client.delete(
+        "/admin/delete",
+        headers=bearer_token_header(secret_token)
+    )
+    
     assert delete_response.status_code == status.HTTP_200_OK
+    
+    # Verify DB shows URL as inactive
     db_row: models.URL = (
-        db_session.query(models.URL).filter(models.URL.secret_key == secret_key).first()
+        db_session.query(models.URL).filter(models.URL.secret_key == secret_token).first()
     )
     assert db_row.is_active is False
+    
+    # Verify redirect is now blocked
+    blocked_response = await api_client.get(f"/{url_key}", follow_redirects=False)
     assert blocked_response.status_code == status.HTTP_404_NOT_FOUND
 
 

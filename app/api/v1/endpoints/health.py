@@ -19,6 +19,6 @@ async def health_check():
     try:
         db: Session = next(get_db())
         db.execute(text("SELECT 1"))
-    except Exception as e:
-        return {"status": "unhealthy", "detail": f"Database connection error: {str(e)}"}
+    except Exception:
+        return {"status": "unhealthy", "detail": "Database connection error"}
     return {"status": "db healthy"}

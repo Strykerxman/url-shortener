@@ -8,6 +8,14 @@ FastAPI service to create, redirect, and manage shortened URLs. Uses PostgreSQL 
 docker compose up --build
 ```
 
+After startup, run migrations (alembic is NOT automatic):
+
+```cmd
+docker compose exec server alembic upgrade head
+```
+
+Then:
+
 - API: `http://localhost:8000`
 - Docs: `http://localhost:8000/docs`
 
@@ -19,7 +27,9 @@ docker compose down
 
 ## Configuration
 
-Create a `.env` file (used by Compose) with minimal settings:
+### For Docker Compose
+
+Create a `.env.docker` file (used by Compose) with minimal settings:
 
 ```ini
 DATABASE_URL=postgresql+psycopg2://urlshortener:changeme@db:5432/urlshortener_db
@@ -32,13 +42,46 @@ REDIS_HOST=redis
 REDIS_PORT=6379
 ```
 
+**REASON**: Separate config files for different environments (docker vs local) prevent accidental cross-environment pollution and make deployment safer.
+
+### For Local Development
+
+Create a `.env.local` file with local overrides (loaded BEFORE `.env`, so `.env` takes precedence):
+
+```ini
+DATABASE_URL=postgresql+psycopg2://urlshortener:changeme@localhost:5432/urlshortener_db
+REDIS_HOST=localhost
+DEBUG=true
+```
+
 ## API Summary
 
-- `GET /health`: service and DB health.
-- `POST /url`: body `{"target_url": "https://example.com"}` → returns `url` (short key) and `admin_url` (secret key).
-- `GET /{key}`: redirect to target URL.
-- `GET /admin/{secret_key}`: admin info and stats.
-- `DELETE /admin/{secret_key}`: deactivate the short URL.
+### Public Endpoints
+
+- `GET /health`: Service and DB health check.
+- `POST /url`: Create a shortened URL.
+  - Request: `{"target_url": "https://example.com"}`
+  - Response: `{"url": "https://127.0.0.1:8000/abc123", "admin_url": "Use Authorization header: Bearer <secret_key>"}`
+
+### Protected Endpoints (Require Authorization Header)
+
+All admin endpoints now use **Bearer token authentication** (secrets in Authorization header, not URL path).
+
+**SECURITY CHANGE**: Moved secrets from URL path to Authorization header to prevent leakage via logs, browser history, and observability tools.
+
+```bash
+# Get admin info for a shortened URL
+curl -H "Authorization: Bearer <secret_key>" http://localhost:8000/admin/info
+
+# Delete a shortened URL
+curl -X DELETE -H "Authorization: Bearer <secret_key>" http://localhost:8000/admin/delete
+```
+
+### Legacy URL Path Authentication (DEPRECATED)
+
+❌ **No longer supported** (v1.1+): `GET /admin/{secret_key}`, `DELETE /admin/{secret_key}`
+
+Use the Authorization header format above instead.
 
 ## Local Development
 

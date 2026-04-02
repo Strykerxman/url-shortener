@@ -9,7 +9,7 @@
 # -------------------------------------------------------
 
 from app.database.database import Base
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
 
 
 class URL(Base):
@@ -33,7 +33,14 @@ class URL(Base):
     # Counter tracking the number of times this shortened URL has been accessed.
     # Incremented each time a redirect occurs, used for analytics.
     clicks = Column(Integer, default=0)
+    # Optional expiration datetime for the URL. If set, the URL is considered expired after this time.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
 
+    
     def __repr__(self):
         # Return a string representation of the URL object for debugging and logging.
-        return f"<URL(id={self.id}, key={self.key}, target_url={self.target_url}, is_active={self.is_active}, clicks={self.clicks})>"
+        return (
+            f"<URL(id={self.id}, key={self.key}, target_url={self.target_url}, "
+            f"is_active={self.is_active}, clicks={self.clicks}, "
+            f"expires_at={self.expires_at})>"
+        )

@@ -12,19 +12,38 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-pool = redis.ConnectionPool(
-    host=settings.redis_host,
-    port=settings.redis_port,
-    decode_responses=True,
-)
-logging.logger.info(
-    "Redis connection pool created for %s:%d", settings.redis_host, settings.redis_port
-)
+# Initialize connection pool as None to prevent side-effects during import.
+# This follows Inversion of Control: resources are managed, not global.
+pool = None
+
+
+def init_redis():
+    """
+    Initialize the Redis connection pool.
+    Separates resource allocation from module loading.
+    """
+    global pool
+    if pool is None:
+        pool = redis.ConnectionPool(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            decode_responses=True,
+        )
+        logging.logger.info(
+            "Redis connection pool initialized for %s:%d", 
+            settings.redis_host, 
+            settings.redis_port
+        )
 
 
 async def get_redis() -> redis.Redis:
-    # Provides a Redis client from the shared connection pool.
-    # Ping is best-effort: failures are logged and ignored to keep the API responsive.
+    """
+    Dependency injection for Redis clients.
+    Ensures the pool is initialized before yielding a client.
+    """
+    if pool is None:
+        init_redis()
+        
     client: redis.Redis = redis.Redis(connection_pool=pool)
     try:
         await client.ping()

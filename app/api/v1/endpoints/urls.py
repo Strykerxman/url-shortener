@@ -15,10 +15,12 @@ from redis.asyncio import Redis
 import asyncio
 
 from app.core import logging
+from app.core.limiter import limiter
 from app import schemas
 from app.core.config import get_settings
 from app.core.url_utils import get_admin_info, validate_url_key
 from app.database import crud, get_db, get_redis
+from app.api.v1.endpoints.auth import get_admin_secret
 
 import validators
 
@@ -27,6 +29,7 @@ router = APIRouter()
 
 
 @router.get("/{url_key}")
+@limiter.limit("60/minute")
 async def forward_to_target_url(
     url_key: str,
     request: Request,
@@ -62,8 +65,10 @@ async def forward_to_target_url(
 
 
 @router.post("/url", response_model=schemas.URLInfo)
+@limiter.limit("10/minute")
 async def create_url(
     url: schemas.URLBase,
+    request: Request,
     db_session: Session = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
 ):
@@ -77,11 +82,9 @@ async def create_url(
     # Create a new URL record in the database with auto-generated keys.
     db_url = crud.create_db_url(db_session, url)
 
-    # Set the shortened URL key for the response (public short link).
+    # The public response should expose the short key, not the full URL.
     db_url.url = db_url.key
-
-    # Set the admin secret key for the response (used for delete/update operations).
-    db_url.admin_url = db_url.secret_key
+    db_url.admin_url = f"Use Authorization header: Bearer {db_url.secret_key}"
 
     await _safe_redis_set(redis_client, db_url)
     # Construct and return a Pydantic response while the DB session is still
@@ -95,15 +98,17 @@ async def create_url(
 
 
 @router.get(
-    "/admin/{secret_key}", name="administration info", response_model=schemas.URLInfo
+    "/admin/info", name="administration info", response_model=schemas.URLInfo
 )
 async def get_url_info(
-    secret_key: str,
     request: Request,
     db_session: Session = Depends(get_db),
     settings=Depends(get_settings),
+    secret_key: str = Depends(get_admin_secret),
 ):
-    # Retrieve the URL record using the provided secret key for authentication.
+    # Retrieve the URL record using the provided secret key from Authorization header.
+    # Secret is extracted from "Authorization: Bearer <secret_key>" header, not the URL.
+    # This prevents leakage via logs, browser history, and observability tooling.
     if db_url := crud.get_db_url_by_secret_key(db_session, secret_key):
         # URL found: return formatted admin information including statistics.
         url_info = get_admin_info(db_url, settings)
@@ -113,14 +118,18 @@ async def get_url_info(
         logging.raise_not_found(request)
 
 
-@router.delete("/admin/{secret_key}", name="delete url")
+@router.delete("/admin/delete", name="delete url")
 async def delete_url(
-    secret_key: str, request: Request, db_session: Session = Depends(get_db)
+    request: Request, 
+    db_session: Session = Depends(get_db),
+    secret_key: str = Depends(get_admin_secret),
 ):
-    # Retrieve and deactivate the URL record using the provided secret key for authentication.
+    # Retrieve and deactivate the URL record using the provided secret key.
+    # Secret is extracted from "Authorization: Bearer <secret_key>" header, not the URL.
+    # This prevents leakage via logs, browser history, and observability tooling.
     if _ := crud.deactivate_db_url_by_secret_key(db_session, secret_key):
         # URL successfully deactivated (soft delete): return confirmation message.
-        return {"detail": f"URL with secret key {secret_key} has been deactivated."}
+        return {"detail": "URL has been deactivated."}
     else:
         # URL not found or already inactive: raise a 404 error with detailed logging.
         logging.raise_not_found(request)
