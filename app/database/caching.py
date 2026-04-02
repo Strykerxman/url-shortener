@@ -5,6 +5,8 @@
 # - Non-blocking timeouts ensure cache issues never slow the API.
 # - Missing/failed Redis is treated as non-fatal; the app falls back to DB.
 # -------------------------------------------------------
+from typing import AsyncGenerator
+
 import redis.asyncio as redis
 import asyncio
 from app.core import logging
@@ -36,7 +38,7 @@ def init_redis():
         )
 
 
-async def get_redis() -> redis.Redis:
+async def get_redis() -> AsyncGenerator[redis.Redis, None]:
     """
     Dependency injection for Redis clients.
     Ensures the pool is initialized before yielding a client.
@@ -53,7 +55,10 @@ async def get_redis() -> redis.Redis:
             e,
             exc_info=True,
         )
-    return client
+        
+    yield client
+
+    await client.close()
 
 
 async def safe_redis_set(client: redis.Redis, key: str, value: str, ex: int | None):

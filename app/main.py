@@ -1,9 +1,7 @@
 from contextlib import asynccontextmanager
-from pydantic import SecretStr
 from fastapi import FastAPI
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from .core.config import get_settings
 from .api.v1 import router
 from .core.limiter import limiter
 from .database.database import init_db
@@ -17,7 +15,6 @@ async def lifespan(app: FastAPI):
     init_db()
     init_redis()
     yield
-    # Application shutdown cleanup (if needed) can go here.
 
 
 app = FastAPI(
@@ -29,8 +26,6 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-settings = get_settings()
 
 
 @app.get("/")
