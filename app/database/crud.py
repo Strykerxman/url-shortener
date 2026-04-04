@@ -9,11 +9,12 @@
 # -------------------------------------------------------
 
 from sqlalchemy.orm import Session
-from sqlalchemy import update, or_
-from datetime import datetime, timezone
+from sqlalchemy import update
 
 from app.core import keygen
 from app import schemas, models
+from app.core import logging
+from app.core.url_utils import compute_expires_at, get_expiration_filter, validate_expires_at
 
 
 def create_db_url(db: Session, url: schemas.URLBase) -> models.URL:
@@ -23,12 +24,29 @@ def create_db_url(db: Session, url: schemas.URLBase) -> models.URL:
     # Combines the key with 8 additional random characters for security.
     secret_key = f"{key}_{keygen.create_key(8)}"
 
+    # Compute effective expiration datetime using centralized logic.
+    # Delegates to url_utils.compute_expires_at() which applies priority:
+    # explicit expires_at > relative time_to_expiry > default (24 hours).
+    try:
+        effective_expires_at = compute_expires_at(
+            time_to_expiry=getattr(url, "time_to_expiry", None)
+        )
+    except ValueError as e:
+        logging.raise_bad_request(message=str(e))
+
+    # Validate that the computed expiration is in the future.
+    # Delegates to url_utils.validate_expires_at() which raises ValueError if invalid.
+    try:
+        validate_expires_at(effective_expires_at)
+    except ValueError as e:
+        logging.raise_bad_request(message=str(e))
+
     # Create a new URL model instance with the provided target URL and generated keys.
     db_url = models.URL(
-        target_url=url.target_url, 
-        key=key, 
+        target_url=url.target_url,
+        key=key,
         secret_key=secret_key,
-        expires_at=url.expires_at
+        expires_at=effective_expires_at
     )
     # Add the new URL object to the session and persist it to the database.
     db.add(db_url)
@@ -41,9 +59,10 @@ def create_db_url(db: Session, url: schemas.URLBase) -> models.URL:
 def get_db_url_by_key(db: Session, url_key: str) -> models.URL:
     # Query the database for an active URL record matching the provided short key.
     # Returns the first matching URL object, or None if not found.
+    # Uses centralized expiration filter from url_utils.get_expiration_filter().
     return (
         db.query(models.URL)
-        .filter(models.URL.key == url_key, models.URL.is_active, _not_expired())  # Filter by key and active status
+        .filter(models.URL.key == url_key, models.URL.is_active, get_expiration_filter())
         .first()  # Retrieve only the first result
     )
 
@@ -87,9 +106,10 @@ def add_click_by_key(db: Session, url_key: str) -> models.URL:
     # Increment the click counter for a URL identified by its short key.
     # Uses a single UPDATE … RETURNING statement to atomically increment and fetch the row.
     # Expired URLs are excluded so clicks are not recorded for dead links.
+    # Uses centralized expiration filter from url_utils.get_expiration_filter().
     stmt = (
         update(models.URL)
-        .where(models.URL.key == url_key, models.URL.is_active, _not_expired())  # Filter by key, active status, and expiration
+        .where(models.URL.key == url_key, models.URL.is_active, get_expiration_filter())
         .values(clicks=models.URL.clicks + 1)
         .returning(models.URL)
     )
@@ -112,7 +132,3 @@ def deactivate_db_url_by_secret_key(db: Session, secret_key: str) -> models.URL:
         db.refresh(db_url)
     # Return the updated URL object, or None if no matching record was found.
     return db_url
-
-def _not_expired():
-    now = datetime.now(timezone.utc)
-    return or_(models.URL.expires_at.is_(None), models.URL.expires_at > now)

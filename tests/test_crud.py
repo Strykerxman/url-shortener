@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app import schemas
 from app.core import keygen
 from app.database import crud
@@ -18,6 +20,29 @@ def test_create_db_url_persists_expected_fields(db_session, monkeypatch):
     assert db_url.secret_key == "ABCDE_SECRETS1"
     assert db_url.is_active is True
     assert db_url.clicks == 0
+
+
+def test_create_db_url_defaults_expires_at_to_24h(db_session, monkeypatch):
+    before = datetime.now(timezone.utc)
+    db_url = _create_url(db_session, monkeypatch, key="EXP24H", secret_suffix="EXP24H11")
+    after = datetime.now(timezone.utc)
+
+    assert db_url.expires_at is not None
+
+    expires_at_utc = (
+        db_url.expires_at.replace(tzinfo=timezone.utc)
+        if db_url.expires_at.tzinfo is None
+        else db_url.expires_at.astimezone(timezone.utc)
+    )
+
+    lower_bound = before.replace(microsecond=0)
+    upper_bound = after.replace(microsecond=0)
+
+    delta_from_before = expires_at_utc - lower_bound
+    delta_from_after = expires_at_utc - upper_bound
+
+    assert delta_from_before.total_seconds() >= 23 * 3600
+    assert delta_from_after.total_seconds() <= 25 * 3600
 
 
 def test_get_db_url_by_key_and_secret(db_session, monkeypatch):

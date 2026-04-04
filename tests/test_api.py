@@ -1,6 +1,7 @@
 import pytest
 from fastapi import status
 from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
 
 from app import models
 
@@ -65,6 +66,56 @@ async def test_create_url_invalid_format(api_client):
         in response.json()["detail"]
     )
 
+@pytest.mark.asyncio
+async def test_create_url_with_time_to_expiry(api_client, db_session):
+    payload = {
+        "target_url": "https://example.com",
+        "time_to_expiry": "2h",
+    }
+    response = await api_client.post("/url", json=payload)
+    assert response.status_code == status.HTTP_200_OK
+    url_key = response.json()["url"]
+    expires_at = response.json()["expires_at"]
+
+    db_row: models.URL = (
+        db_session.query(models.URL)
+        .filter(models.URL.key == url_key, models.URL.is_active)
+        .first()
+    )
+    assert db_row is not None
+    now_utc = datetime.now(timezone.utc)
+    expires_at_utc = (
+        db_row.expires_at.replace(tzinfo=timezone.utc)
+        if db_row.expires_at.tzinfo is None
+        else db_row.expires_at.astimezone(timezone.utc)
+    )
+    delta = expires_at_utc - now_utc
+    assert timedelta(minutes=119) <= delta <= timedelta(minutes=121)
+    assert expires_at == expires_at_utc.astimezone().isoformat()
+
+@pytest.mark.asyncio
+async def test_create_url_rejects_past_expiry(api_client):
+    payload = {
+        "target_url": "https://example.com",
+        "time_to_expiry": "0h",
+    }
+
+    response = await api_client.post("/url", json=payload)
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "time_to_expiry must be a future duration" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_create_url_rejects_too_long_expiry(api_client):
+    payload = {
+        "target_url": "https://example.com",
+        "time_to_expiry": "400d",
+    }
+
+    response = await api_client.post("/url", json=payload)
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "time_to_expiry cannot exceed 1 year (365 days)" in response.json()["detail"]
 
 @pytest.mark.asyncio
 async def test_get_admin_info_requires_bearer_token(api_client):

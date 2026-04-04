@@ -57,6 +57,15 @@ def session_clear_settings_cache():
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True, scope="function")
+def disable_rate_limiter_for_tests():
+    """Disable slowapi throttling in tests to avoid flaky 429s across cases."""
+    previous_enabled = app.state.limiter.enabled
+    app.state.limiter.enabled = False
+    yield
+    app.state.limiter.enabled = previous_enabled
+
+
 @pytest.fixture(scope="function")
 def extract_bearer_token():
     """

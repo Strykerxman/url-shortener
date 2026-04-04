@@ -6,8 +6,8 @@
 # between the API and clients, including validation rules and JSON serialization.
 # -------------------------------------------------------
 
-from pydantic import BaseModel, ConfigDict
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -16,7 +16,8 @@ class URLBase(BaseModel):
     # Contains only the target URL that the user wants to shorten.
     # Used as the input model for POST /url endpoint.
     target_url: str
-    expires_at: Optional[datetime] = None  # Optional expiration datetime for the URL.
+    # Allow clients to provide a relative time-to-expiry string such as '2h', '30min', '7d', or '2m' (months).
+    time_to_expiry: Optional[str] = Field(default="24h", exclude=True)
 
 
 class URL(URLBase):
@@ -24,8 +25,18 @@ class URL(URLBase):
     # Inherits target_url and expires_at from URLBase.
     # Used for internal data representation combining request and database data.
     model_config = ConfigDict(from_attributes=True)
+    expires_at: Optional[datetime] = None  # Optional expiration datetime for the URL.
     is_active: bool  # Whether the shortened URL is currently active.
     clicks: int  # Number of times the shortened URL has been accessed.
+
+    @field_serializer("expires_at", when_used="json")
+    def serialize_expires_at(self, value: Optional[datetime]):
+        if value is None:
+            return None
+        # Emit local timezone in API JSON for client-facing readability.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone().isoformat()
 
 
 class URLInfo(URL):
