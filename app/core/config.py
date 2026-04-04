@@ -8,7 +8,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field, computed_field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,10 +27,6 @@ class Settings(BaseSettings):
     database_url: str = Field(..., env="DATABASE_URL")
     redis_host: str = Field(default="localhost", env="REDIS_HOST")
     redis_port: int = Field(default=6379, env="REDIS_PORT")
-
-    @computed_field(return_type=str)
-    def sqlalchemy_database_url(self) -> str:
-        return self.database_url
 
 
 @lru_cache(maxsize=1)

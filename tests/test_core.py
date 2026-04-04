@@ -87,3 +87,25 @@ async def test_safe_redis_set_handles_timeout():
     await caching.safe_redis_set(client, "key", "value", ex=10)
 
     client.set.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_safe_redis_set_success():
+    """Test successful cache write."""
+    client = AsyncMock()
+    client.set = AsyncMock()
+
+    await caching.safe_redis_set(client, "key", "value", ex=3600)
+
+    client.set.assert_awaited_once_with("key", "value", ex=3600)
+
+
+@pytest.mark.asyncio
+async def test_safe_redis_set_handles_exception():
+    """Test that general Redis errors are caught and logged."""
+    client = AsyncMock()
+    client.set = AsyncMock(side_effect=ConnectionError("Redis unavailable"))
+
+    await caching.safe_redis_set(client, "key", "value", ex=3600)
+
+    client.set.assert_awaited_once()

@@ -46,7 +46,15 @@ REDIS_PORT=6379
 
 ### For Local Development
 
-Create a `.env.local` file with local overrides (loaded BEFORE `.env`, so `.env` takes precedence):
+Create a `.env.local` file with local values.
+
+Environment loading order is:
+- `.env.local`
+- `.env`
+
+Later files override earlier ones, so values in `.env` take precedence over `.env.local`.
+
+Example:
 
 ```ini
 DATABASE_URL=postgresql+psycopg2://urlshortener:changeme@localhost:5432/urlshortener_db
@@ -59,9 +67,11 @@ DEBUG=true
 ### Public Endpoints
 
 - `GET /health`: Service and DB health check.
+  - Returns `200` with `{"status": "db healthy"}` when DB is reachable.
+  - Returns `503` with `{"status": "unhealthy", "detail": "Database connection error"}` when DB check fails.
 - `POST /url`: Create a shortened URL.
   - Request: `{"target_url": "https://example.com"}`
-  - Response: `{"url": "https://127.0.0.1:8000/abc123", "admin_url": "Use Authorization header: Bearer <secret_key>"}`
+  - Response: `{"url": "abc123", "admin_url": "Use Authorization header: Bearer <secret_key>", "target_url": "https://example.com", "is_active": true, "clicks": 0, "expires_at": null}`
 
 ### Protected Endpoints (Require Authorization Header)
 
@@ -94,6 +104,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Testing
+
+Testing uses `.env.test` values and runs migrations against `DATABASE_URL` from `.env.test`.
+Ensure that test database is reachable before running tests.
 
 ```cmd
 pytest -q

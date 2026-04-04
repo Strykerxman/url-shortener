@@ -30,7 +30,7 @@ def init_db():
     settings = get_settings()
     
     if engine is None:
-        engine = create_engine(settings.sqlalchemy_database_url, echo=settings.debug)
+        engine = create_engine(settings.database_url, echo=settings.debug)
         SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
         logging.logger.info("Database engine and SessionLocal factory initialized.")
 

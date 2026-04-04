@@ -26,7 +26,7 @@ def get_url() -> str:
     if env_url:
         return env_url
 
-    return get_settings().sqlalchemy_database_url
+    return get_settings().database_url
 
 
 def run_migrations_offline():

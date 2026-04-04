@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from redis.asyncio import Redis
-import asyncio
 
 from app.core import logging
 from app.core.limiter import limiter
@@ -20,6 +19,7 @@ from app import schemas
 from app.core.config import get_settings
 from app.core.url_utils import get_admin_info, validate_url_key
 from app.database import crud, get_db, get_redis
+from app.database.caching import safe_redis_set
 from app.api.v1.endpoints.auth import get_admin_secret
 
 import validators
@@ -57,7 +57,9 @@ async def forward_to_target_url(
         )
     # DB fallback
     if db_url := crud.add_click_by_key(db_session, url_key):
-        await _safe_redis_set(redis_client, db_url)
+        await safe_redis_set(
+            redis_client, db_url.key, db_url.target_url, ex=(3600 * 24)
+        )
         return RedirectResponse(db_url.target_url)
 
     # Not found
@@ -86,7 +88,7 @@ async def create_url(
     db_url.url = db_url.key
     db_url.admin_url = f"Use Authorization header: Bearer {db_url.secret_key}"
 
-    await _safe_redis_set(redis_client, db_url)
+    await safe_redis_set(redis_client, db_url.key, db_url.target_url, ex=(3600 * 24))
     # Construct and return a Pydantic response while the DB session is still
     # open to avoid lazy-loading or additional DB access during serialization.
     # For Pydantic v2 use `model_validate` (schemas.Config sets from_attributes=True).
@@ -134,14 +136,3 @@ async def delete_url(
         # URL not found or already inactive: raise a 404 error with detailed logging.
         logging.raise_not_found(request)
 
-
-async def _safe_redis_set(redis_client: Redis, db_url):
-    try:
-        await asyncio.wait_for(
-            redis_client.set(db_url.key, db_url.target_url, ex=(3600 * 24)),
-            timeout=0.75,
-        )
-    except asyncio.TimeoutError:
-        logging.logger.warning("Timed out setting Redis key=%s", db_url.key)
-    except Exception:
-        logging.logger.exception("Error setting Redis key=%s", db_url.key)

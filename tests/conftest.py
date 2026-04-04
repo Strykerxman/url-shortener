@@ -6,7 +6,7 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
-from pydantic import Field, computed_field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
@@ -23,13 +23,6 @@ class TestSettings(BaseSettings):
     base_url: str
     debug: bool = True
     env_name: str = "test"
-
-    @computed_field(return_type=str)
-    def sqlalchemy_database_url(self) -> str:
-        if self.database_url:
-            return self.database_url
-        else:
-            raise ValueError("DATABASE_URL is required")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -54,6 +47,16 @@ def override_get_settings(test_settings):
     app.dependency_overrides.pop(get_settings, None)
 
 
+@pytest.fixture(autouse=True, scope="function")
+def session_clear_settings_cache():
+    """
+    Clears cached settings after each test to prevent config leakage.
+    """
+    yield
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+
+
 @pytest.fixture(scope="function")
 def extract_bearer_token():
     """
@@ -61,12 +64,8 @@ def extract_bearer_token():
     
     Since admin_url now contains: "Use Authorization header: Bearer <token>",
     this extracts just the token part.
-    
-    Example:
-        response = await api_client.post("/url", ...)
-        token = extract_bearer_token(response.json()["admin_url"])
-        headers = {"Authorization": f"Bearer {token}"}
     """
+    
     def _extract(admin_url_str: str) -> str:
         # Format: "Use Authorization header: Bearer <secret_key>"
         if "Bearer " not in admin_url_str:
@@ -77,20 +76,14 @@ def extract_bearer_token():
 
 @pytest.fixture(scope="function")
 def bearer_token_header(extract_bearer_token):
-    """
-    Helper to create a complete Authorization header dict for API requests.
-    
-    Usage:
-        token = "my_secret_key"
-        headers = bearer_token_header(token)
-        response = await api_client.get("/admin/info", headers=headers)
-    """
+    """Helper to create a complete Authorization header dict for API requests."""
+
     def _create_header(token: str) -> dict:
         return {"Authorization": f"Bearer {token}"}
     return _create_header
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def mocked_redis():
     storage = defaultdict(lambda: None)
     mock_redis = AsyncMock(spec=Redis)
@@ -106,7 +99,8 @@ def mocked_redis():
     mock_redis.delete.side_effect = lambda key: storage.pop(key, None) is not None
 
     mock_redis.ping = AsyncMock()
-    return mock_redis
+    yield mock_redis
+    storage.clear()
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -114,7 +108,7 @@ def mock_get_redis(mocked_redis):
     from app.database import get_redis
 
     async def _get_mock_redis():
-        return mocked_redis
+        yield mocked_redis
 
     app.dependency_overrides[get_redis] = _get_mock_redis
     yield
@@ -123,13 +117,19 @@ def mock_get_redis(mocked_redis):
 
 @pytest.fixture(scope="session")
 def setup_test_db(test_settings):
-    from app.database.database import init_db
-    init_db()  # Ensure global engine is initialized for tests
-    
+    from app.database import database as database_module
+
     settings = test_settings
-    from app.database.database import engine
+
+    # Force test process to use test database globals, independent of local env files.
+    engine = create_engine(settings.database_url, echo=settings.debug)
+    database_module.engine = engine
+    database_module.SessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False
+    )
+
     alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.sqlalchemy_database_url)
+    alembic_cfg.set_main_option("sqlalchemy.url", settings.database_url)
 
     # Use the connection injection pattern to ensure migrations hit the test DB
     with engine.begin() as conn:
@@ -137,7 +137,10 @@ def setup_test_db(test_settings):
         command.upgrade(alembic_cfg, "head")
 
     yield engine
+
     engine.dispose()
+    database_module.engine = None
+    database_module.SessionLocal = None
 
 
 @pytest.fixture(scope="function")

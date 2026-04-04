@@ -5,7 +5,8 @@
 # is running and responsive. Used for monitoring and load balancer health checks.
 # -------------------------------------------------------
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from app.database import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -20,5 +21,8 @@ async def health_check(db: Session = Depends(get_db)):
         db.execute(text("SELECT 1"))
         return {"status": "db healthy"}
     except Exception:
-        return {"status": "unhealthy", "detail": "Database connection error"}
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unhealthy", "detail": "Database connection error"},
+        )
     
